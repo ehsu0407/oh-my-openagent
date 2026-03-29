@@ -10,6 +10,7 @@ import {
 } from "../../features/boulder-state"
 import type { BoulderState } from "../../features/boulder-state"
 import { _resetForTesting, subagentSessions, updateSessionAgent } from "../../features/claude-code-session-state"
+import { getAgentDisplayName } from "../../shared/agent-display-names"
 import type { PendingTaskRef } from "./types"
 
 const TEST_STORAGE_ROOT = join(tmpdir(), `atlas-message-storage-${randomUUID()}`)
@@ -1670,10 +1671,10 @@ session_id: ses_untrusted_999
          },
        })
 
-       // then - should call prompt for sisyphus
-       expect(mockInput._promptMock).toHaveBeenCalled()
-       const callArgs = mockInput._promptMock.mock.calls[0][0]
-       expect(callArgs.body.agent).toBe("sisyphus")
+      // then - should call prompt for sisyphus
+      expect(mockInput._promptMock).toHaveBeenCalled()
+      const callArgs = mockInput._promptMock.mock.calls[0][0]
+      expect(callArgs.body.agent).toBe(getAgentDisplayName("sisyphus"))
      })
 
     test("should debounce rapid continuation injections (prevent infinite loop)", async () => {
