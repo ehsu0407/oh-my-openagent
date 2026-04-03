@@ -5,6 +5,8 @@ const CORE_AGENT_ORDER: ReadonlyArray<{ displayName: string; order: number }> = 
   { displayName: getAgentDisplayName("hephaestus"), order: 2 },
   { displayName: getAgentDisplayName("prometheus"), order: 3 },
   { displayName: getAgentDisplayName("atlas"), order: 4 },
+  { displayName: getAgentDisplayName("build"), order: 5 },
+  { displayName: getAgentDisplayName("plan"), order: 6 },
 ];
 
 function injectOrderField(

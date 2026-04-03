@@ -8,6 +8,7 @@ export const AGENT_DISPLAY_NAMES: Record<string, string> = {
   hephaestus: "Hephaestus (Deep Agent)",
   prometheus: "Prometheus (Plan Builder)",
   atlas: "Atlas (Plan Executor)",
+  plan: "plan",
   "sisyphus-junior": "Sisyphus-Junior",
   metis: "Metis (Plan Consultant)",
   momus: "Momus (Plan Critic)",
