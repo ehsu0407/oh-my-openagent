@@ -173,19 +173,29 @@ export async function applyAgentConfig(params: {
       useTaskSystem,
     );
 
-    if (builderEnabled) {
-      const { name: _buildName, ...buildConfigWithoutName } =
-        configAgent?.build ?? {};
-      const migratedBuildConfig = migrateAgentConfig(
-        buildConfigWithoutName as Record<string, unknown>,
-      );
-      const override = params.pluginConfig.agents?.["OpenCode-Builder"];
-      const base = {
-        ...migratedBuildConfig,
-        description: `${(configAgent?.build?.description as string) ?? "Build agent"} (OpenCode default)`,
-      };
-      agentConfig["OpenCode-Builder"] = override ? { ...base, ...override } : base;
-    }
+    const { name: _buildName, ...buildConfigWithoutName } =
+      configAgent?.build ?? {};
+    const migratedBuildConfig = migrateAgentConfig(
+      buildConfigWithoutName as Record<string, unknown>,
+    );
+    const builderOverride = params.pluginConfig.agents?.build as
+      | Record<string, unknown>
+      | undefined;
+    const legacyBuilderOverride = params.pluginConfig.agents?.["OpenCode-Builder"] as
+      | Record<string, unknown>
+      | undefined;
+    const mergedBuilderOverride =
+      builderOverride || legacyBuilderOverride
+        ? {
+            ...(legacyBuilderOverride ?? {}),
+            ...(builderOverride ?? {}),
+          }
+        : undefined;
+    const visibleBuildConfig = {
+      ...migratedBuildConfig,
+      description: `${(configAgent?.build?.description as string) ?? "Build agent"} (OpenCode default)`,
+      ...(mergedBuilderOverride ?? {}),
+    };
 
     if (plannerEnabled) {
       const prometheusOverride = params.pluginConfig.agents?.["prometheus"] as
@@ -215,10 +225,6 @@ export async function applyAgentConfig(params: {
               value ? migrateAgentConfig(value as Record<string, unknown>) : value,
             ]),
         )
-      : {};
-
-    const migratedBuild = configAgent?.build
-      ? migrateAgentConfig(configAgent.build as Record<string, unknown>)
       : {};
 
     const planDemoteConfig = shouldDemotePlan
@@ -254,7 +260,9 @@ export async function applyAgentConfig(params: {
       ...filterDisabledAgents(filteredProjectAgents),
       ...filterDisabledAgents(filteredPluginAgents),
       ...filteredConfigAgents,
-      build: { ...migratedBuild, mode: "subagent", hidden: true },
+      build: builderEnabled
+        ? visibleBuildConfig
+        : { ...migratedBuildConfig, mode: "subagent", hidden: true },
       ...(planDemoteConfig ? { plan: planDemoteConfig } : {}),
     };
   } else {
