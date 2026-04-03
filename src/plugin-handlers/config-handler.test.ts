@@ -207,6 +207,75 @@ describe("Plan agent demote behavior", () => {
     expect(ordered).toEqual(coreAgents)
   })
 
+  test("surfaces restored default agents as build and plan after OMO agents", async () => {
+    // #given
+    const createBuiltinAgentsMock = agents.createBuiltinAgents as unknown as {
+      mockResolvedValue: (value: Record<string, unknown>) => void
+    }
+    createBuiltinAgentsMock.mockResolvedValue({
+      sisyphus: { name: "sisyphus", prompt: "test", mode: "primary" },
+      hephaestus: { name: "hephaestus", prompt: "test", mode: "primary" },
+      oracle: { name: "oracle", prompt: "test", mode: "subagent" },
+      atlas: { name: "atlas", prompt: "test", mode: "primary" },
+      build: { name: "build", prompt: "build prompt", mode: "primary" },
+    })
+    const pluginConfig: OhMyOpenCodeConfig = {
+      sisyphus_agent: {
+        default_builder_enabled: true,
+        planner_enabled: true,
+        replace_plan: false,
+      },
+    }
+    const config: Record<string, unknown> = {
+      model: "anthropic/claude-opus-4-6",
+      agent: {
+        build: {
+          name: "build",
+          mode: "primary",
+          prompt: "original build prompt",
+        },
+        plan: {
+          name: "plan",
+          mode: "primary",
+          prompt: "original plan prompt",
+        },
+      },
+    }
+    const handler = createConfigHandler({
+      ctx: { directory: "/tmp" },
+      pluginConfig,
+      modelCacheState: {
+        anthropicContext1MEnabled: false,
+        modelContextLimitsCache: new Map(),
+      },
+    })
+
+    // #when
+    await handler(config)
+
+    // #then
+    const agentConfig = config.agent as Record<string, { order?: number; hidden?: boolean; prompt?: string }>
+    const keys = Object.keys(agentConfig)
+
+    expect(keys).toContain("build")
+    expect(keys).toContain("plan")
+    expect(keys).not.toContain("OpenCode-Builder")
+    expect(agentConfig.build.hidden).toBeUndefined()
+    expect(agentConfig.build.prompt).toBe("original build prompt")
+
+    const omoAgents = [
+      getAgentDisplayName("sisyphus"),
+      getAgentDisplayName("hephaestus"),
+      getAgentDisplayName("prometheus"),
+      getAgentDisplayName("atlas"),
+    ]
+    const groupedAgents = [...omoAgents, "build", "plan"]
+    const ordered = keys.filter((key) => groupedAgents.includes(key))
+    expect(ordered).toEqual(groupedAgents)
+    expect(agentConfig.build.order).toBe(5)
+    expect(agentConfig.plan.order).toBe(6)
+  })
+
   test("plan agent should be demoted to subagent without inheriting prometheus prompt", async () => {
     // #given
     const pluginConfig: OhMyOpenCodeConfig = {
