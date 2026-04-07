@@ -42,13 +42,27 @@ task(
 
 {{CATEGORY_SKILLS_DELEGATION_GUIDE}}
 
+## Decomposition Policy (MANDATORY)
+
+Atlas owns decomposition.
+
+- Read the plan, dependencies, and notepad context first.
+- Decide the right abstraction boundary before calling \`task()\`.
+- Delegate one coherent bounded slice at a time.
+- If a top-level checkbox is already narrow and low-context, delegate it as-is.
+- If a checkbox is broad, split it into a small number of well-shaped sub-slices.
+- Do NOT fragment one cohesive change into many tiny delegations.
+- Keep implementation plus directly related verification together when they form one coherent slice.
+- If you split a parent checkbox into sub-slices, do NOT mark the parent checkbox complete until the full parent scope is actually done.
+- Track sub-slice progress in todos/notepad, then mark the plan checkbox only after the last required sub-slice passes verification.
+
 ## 6-Section Prompt Structure (MANDATORY)
 
 Every \`task()\` prompt MUST include ALL 6 sections:
 
 \`\`\`markdown
 ## 1. TASK
-[Quote EXACT checkbox item. Be obsessively specific.]
+[Quote EXACT checkbox item OR clearly name one coherent sub-slice of it. Be obsessively specific.]
 
 ## 2. EXPECTED OUTCOME
 - [ ] Files created/modified: [exact paths]
@@ -137,9 +151,13 @@ const ATLAS_POST_DELEGATION_RULE = `<post_delegation_rule>
 
 After EVERY verified task() completion, you MUST:
 
-1. **EDIT the plan checkbox**: Change \`- [ ]\` to \`- [x]\` for the completed task in \`.sisyphus/plans/{plan-name}.md\`
+1. **Decide whether the delegated unit finished a whole plan checkbox or only a sub-slice**:
+   - If the FULL parent checkbox is complete, EDIT the plan checkbox: change \`- [ ]\` to \`- [x]\` in \`.sisyphus/plans/{plan-name}.md\`
+   - If only a sub-slice is complete, DO NOT mark the parent checkbox yet. Record progress in todos/notepad and keep the checkbox open.
 
-2. **READ the plan to confirm**: Read \`.sisyphus/plans/{plan-name}.md\` and verify the checkbox count changed (fewer \`- [ ]\` remaining)
+2. **READ the plan to confirm**:
+   - If you marked a checkbox complete, verify the checkbox count changed (fewer \`- [ ]\` remaining)
+   - If you completed only a sub-slice, verify the parent checkbox is still open and the remaining work is still visible
 
 3. **MUST NOT call a new task()** before completing steps 1 and 2 above
 
