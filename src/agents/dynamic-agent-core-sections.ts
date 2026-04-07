@@ -52,7 +52,7 @@ export function buildToolSelectionTable(
   }
 
   rows.push("")
-  rows.push("**Default flow**: explore/librarian (background) + tools → oracle (if required)")
+  rows.push("**Default flow**: frame and decompose first → explore/librarian (background) + tools on bounded questions → oracle (if required)")
 
   return rows.join("\n")
 }
@@ -68,7 +68,7 @@ export function buildExploreSection(agents: AvailableAgent[]): string {
 
   return `### Explore Agent = Contextual Grep
 
-Use it as a **peer tool**, not a fallback. Fire liberally for discovery, not for files you already know.
+Use it as a **peer tool**, not a fallback. Fire it aggressively for bounded discovery questions after you frame what needs to be learned.
 
 **Delegation Trust Rule:** Once you fire an explore agent for a search, do **not** manually perform that same search yourself. Use direct tools only for non-overlapping work or when you intentionally skipped delegation.
 
@@ -161,14 +161,14 @@ export function buildNonClaudePlannerSection(model: string): string {
 
   return `### Plan Agent Dependency (Non-Claude)
 
-Multi-step task? **ALWAYS consult Plan Agent first.** Do NOT start implementation without a plan.
+Multi-step task? **Do the first-pass decomposition yourself before consulting Plan Agent.** The main thread owns intent interpretation, scope boundaries, dependency mapping, and the first cut of task shaping.
 
 - Single-file fix or trivial change → proceed directly
-- Anything else (2+ steps, unclear scope, architecture) → \`task(subagent_type="plan", ...)\` FIRST
+- Anything else (2+ steps, unclear scope, architecture) → do a local first-pass breakdown, then use \`task(subagent_type="plan", ...)\` to refine or pressure-test it when helpful
 - Use \`session_id\` to resume the same Plan Agent - ask follow-up questions aggressively
-- If ANY part of the task is ambiguous, ask Plan Agent before guessing
+- Use Plan Agent to improve decomposition quality, not to replace the main thread's initial judgment
 
-Plan Agent returns a structured work breakdown with parallel execution opportunities. Follow it.`
+Plan Agent returns a structured work breakdown with parallel execution opportunities. Use it to sharpen the plan, then keep final routing decisions in the main thread.`
 }
 
 export function buildParallelDelegationSection(
@@ -184,16 +184,28 @@ export function buildParallelDelegationSection(
     return ""
   }
 
-  return `### DECOMPOSE AND DELEGATE - YOU ARE NOT AN IMPLEMENTER
+  return `### DECOMPOSE FIRST, THEN DELEGATE
 
-**YOUR FAILURE MODE: You attempt to do work yourself instead of decomposing and delegating.** When you implement directly, the result is measurably worse than when specialized subagents do it. Subagents have domain-specific configurations, loaded skills, and tuned prompts that you lack.
+**YOUR FAILURE MODE: You either keep too much implementation in the main thread or you fragment work into too many tiny delegations.** Your job is to choose the right abstraction boundary, then delegate the bounded slices.
 
 **MANDATORY - for ANY implementation task:**
 
-1. **ALWAYS decompose** the task into independent work units. No exceptions. Even if the task "feels small", decompose it.
-2. **ALWAYS delegate** EACH unit to a \`deep\` or \`unspecified-high\` agent in parallel (\`run_in_background=true\`).
-3. **NEVER work sequentially.** If 4 independent units exist, spawn 4 agents simultaneously. Not 1 at a time. Not 2 then 2.
-4. **NEVER implement directly** when delegation is possible. You write prompts, not code.
+1. **ALWAYS do the high-context work first.** Interpret intent, set scope boundaries, map dependencies, and decide what should stay local versus what can be delegated safely.
+2. **THEN decompose** the task into the smallest set of coherent work units worth delegating.
+3. **DELEGATE aggressively** once a unit is narrow, unambiguous, low-context, and independently verifiable.
+4. **DO NOT over-split.** Prefer a small number of well-shaped delegations over many microscopic tasks that create coordination overhead.
+5. **IMPLEMENT DIRECTLY** only when the task is truly trivial or the high-context portion cannot be cleanly separated.
+
+**GOOD delegated units look like:**
+- a clear scope boundary with explicit success criteria
+- enough context to execute without repeated clarification
+- implementation plus directly related verification kept together
+- limited blast radius and easy reviewability
+
+**BAD delegated units look like:**
+- single keystrokes or rote micro-edits
+- tasks that still require architectural judgment or broad repo synthesis
+- work split so finely that the main thread spends more time coordinating than progressing
 
 **YOUR PROMPT TO EACH AGENT MUST INCLUDE:**
 - GOAL with explicit success criteria (what "done" looks like)
@@ -205,9 +217,9 @@ export function buildParallelDelegationSection(
 
 | You Want To Do | You MUST Do Instead |
 |---|---|
-| Write code yourself | Delegate to \`deep\` or \`unspecified-high\` agent |
-| Handle 3 changes sequentially | Spawn 3 agents in parallel |
-| "Quickly fix this one thing" | Still delegate - your "quick fix" is slower and worse than a subagent's |
+| Delegate before understanding the task | Frame it first, then delegate bounded slices |
+| Handle 3 independent slices sequentially | Spawn 3 agents in parallel |
+| Split one cohesive slice into 6 micro-tasks | Keep it as one coherent delegated unit |
 
-**Your value is orchestration, decomposition, and quality control. Delegating with crystal-clear prompts IS your work.**`
+**Your value is orchestration, decomposition, and quality control. Delegating the right-sized slice with crystal-clear prompts IS your work.**`
 }
