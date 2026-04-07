@@ -179,7 +179,7 @@ describe("buildParallelDelegationSection", () => {
   const unspecifiedHighCategory: AvailableCategory = { name: "unspecified-high", description: "High effort tasks" }
   const otherCategory: AvailableCategory = { name: "quick", description: "Trivial tasks" }
 
-  it("#given non-Claude model with deep category #when building #then returns aggressive delegation section", () => {
+  it("#given non-Claude model with deep category #when building #then returns decomposition-first delegation section", () => {
     //#given
     const model = "google/gemini-3.1-pro"
     const categories = [deepCategory, otherCategory]
@@ -188,14 +188,14 @@ describe("buildParallelDelegationSection", () => {
     const result = buildParallelDelegationSection(model, categories)
 
     //#then
-    expect(result).toContain("DECOMPOSE AND DELEGATE")
-    expect(result).toContain("NOT AN IMPLEMENTER")
-    expect(result).toContain("run_in_background=true")
-    expect(result).toContain("4 independent units")
-    expect(result).toContain("NEVER implement directly")
+    expect(result).toContain("DECOMPOSE FIRST, THEN DELEGATE")
+    expect(result).toContain("high-context work first")
+    expect(result).toContain("DELEGATE aggressively")
+    expect(result).toContain("DO NOT over-split")
+    expect(result).toContain("bounded slices")
   })
 
-  it("#given non-Claude model with unspecified-high category #when building #then returns aggressive delegation section", () => {
+  it("#given non-Claude model with unspecified-high category #when building #then returns decomposition-first delegation section", () => {
     //#given
     const model = "openai/gpt-5.4"
     const categories = [unspecifiedHighCategory, otherCategory]
@@ -204,9 +204,9 @@ describe("buildParallelDelegationSection", () => {
     const result = buildParallelDelegationSection(model, categories)
 
     //#then
-    expect(result).toContain("DECOMPOSE AND DELEGATE")
-    expect(result).toContain("`deep` or `unspecified-high`")
-    expect(result).toContain("NEVER work sequentially")
+    expect(result).toContain("DECOMPOSE FIRST, THEN DELEGATE")
+    expect(result).toContain("bounded slices")
+    expect(result).toContain("Spawn 3 agents in parallel")
   })
 
   it("#given Claude model #when building #then returns empty", () => {
@@ -271,4 +271,3 @@ describe("buildNonClaudePlannerSection", () => {
     expect(result).not.toBe("")
   })
 })
-

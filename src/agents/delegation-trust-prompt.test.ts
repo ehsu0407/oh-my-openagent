@@ -56,6 +56,19 @@ describe("delegation trust prompt rules", () => {
     expect(prompt).toContain("DO NOT perform the same search yourself")
   })
 
+  test("Sisyphus prompt uses decompose-first delegation policy", () => {
+    // given
+    const agent = createSisyphusAgent("anthropic/claude-sonnet-4-6", [exploreAgent])
+
+    // when
+    const prompt = agent.prompt
+
+    // then
+    expect(prompt).toContain("DECOMPOSE FIRST, THEN DELEGATE EXECUTION")
+    expect(prompt).toContain("do not over-split into tiny tasks")
+    expect(prompt).toContain("one coherent slice per delegation")
+  })
+
   test("Hephaestus prompt forbids duplicate delegated exploration", () => {
     // given
     const agent = createHephaestusAgent("openai/gpt-5.2", [exploreAgent])
@@ -114,6 +127,19 @@ describe("delegation trust prompt rules", () => {
     expect(prompt).toContain("do only non-overlapping work simultaneously")
     expect(prompt).toContain("Continue only with non-overlapping work")
     expect(prompt).toContain("DO NOT perform the same search yourself")
+  })
+
+  test("Sisyphus GPT-5.4 prompt uses decompose-first delegation policy", () => {
+    // given
+    const agent = createSisyphusAgent("openai/gpt-5.4", [exploreAgent])
+
+    // when
+    const prompt = agent.prompt
+
+    // then
+    expect(prompt).toContain("Default to decompose-first orchestration")
+    expect(prompt).toContain("bounded slice")
+    expect(prompt).toContain("Do not over-split work")
   })
 
   test("Sisyphus-Junior GPT-5.4 prompt forbids duplicate delegated exploration", () => {

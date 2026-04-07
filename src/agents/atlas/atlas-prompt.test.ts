@@ -144,3 +144,43 @@ describe("Atlas prompts plan path consistency", () => {
     }
   })
 })
+
+describe("Atlas prompts decomposition policy", () => {
+  test("all variants should keep decomposition in the main thread", () => {
+    // given
+    const prompts = [ATLAS_SYSTEM_PROMPT, ATLAS_GPT_SYSTEM_PROMPT, ATLAS_GEMINI_SYSTEM_PROMPT]
+
+    // when / then
+    for (const prompt of prompts) {
+      const lowerPrompt = prompt.toLowerCase()
+      expect(lowerPrompt).toContain("atlas owns decomposition")
+      expect(lowerPrompt).toContain("coherent bounded slice")
+      expect(lowerPrompt).toContain("do not over-split into microtasks")
+    }
+  })
+
+  test("all variants should allow bounded sub-slices instead of raw checkbox-only delegation", () => {
+    // given
+    const prompts = [ATLAS_SYSTEM_PROMPT, ATLAS_GPT_SYSTEM_PROMPT, ATLAS_GEMINI_SYSTEM_PROMPT]
+
+    // when / then
+    for (const prompt of prompts) {
+      const lowerPrompt = prompt.toLowerCase()
+      expect(lowerPrompt).toContain("one coherent slice per delegation")
+      expect(lowerPrompt).toContain("coherent sub-slice")
+    }
+  })
+
+  test("all variants should keep parent checkboxes open until all sub-slices are done", () => {
+    // given
+    const prompts = [ATLAS_SYSTEM_PROMPT, ATLAS_GPT_SYSTEM_PROMPT, ATLAS_GEMINI_SYSTEM_PROMPT]
+
+    // when / then
+    for (const prompt of prompts) {
+      const lowerPrompt = prompt.toLowerCase()
+      expect(lowerPrompt).toContain("do not mark the parent checkbox complete")
+      expect(lowerPrompt).toContain("record progress in todos/notepad")
+      expect(lowerPrompt).toContain("parent checkbox is still open")
+    }
+  })
+})
