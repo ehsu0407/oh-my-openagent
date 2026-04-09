@@ -34,6 +34,7 @@ export function setContinuationMarkerSource(
   source: ContinuationMarkerSource,
   state: ContinuationMarkerState,
   reason?: string,
+  attemptCount?: number,
 ): ContinuationMarker {
   const now = new Date().toISOString()
   const existing = readContinuationMarker(directory, sessionID)
@@ -43,8 +44,10 @@ export function setContinuationMarkerSource(
     sources: {
       ...(existing?.sources ?? {}),
       [source]: {
+        ...(existing?.sources?.[source] ?? {}),
         state,
         ...(reason ? { reason } : {}),
+        ...(attemptCount !== undefined ? { attemptCount } : {}),
         updatedAt: now,
       },
     },

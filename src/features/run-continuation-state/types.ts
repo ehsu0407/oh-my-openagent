@@ -1,10 +1,11 @@
-export type ContinuationMarkerSource = "todo" | "stop"
+export type ContinuationMarkerSource = "todo" | "stop" | "boulder"
 
 export type ContinuationMarkerState = "idle" | "active" | "stopped"
 
 export interface ContinuationMarkerSourceEntry {
   state: ContinuationMarkerState
   reason?: string
+  attemptCount?: number
   updatedAt: string
 }
 

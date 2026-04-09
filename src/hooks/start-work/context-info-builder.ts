@@ -12,6 +12,7 @@ import {
   upsertTaskSessionState,
   writeBoulderState,
 } from "../../features/boulder-state"
+import { normalizeAgentForPromptKey } from "../../shared/agent-display-names"
 import { log } from "../../shared/logger"
 import { createWorktreeActiveBlock } from "./worktree-block"
 import type { PluginInput } from "@opencode-ai/plugin"
@@ -36,7 +37,12 @@ function buildAutoSelectedPlanContext(params: {
 }): string {
   const { planPath, sessionId, timestamp, activeAgent, worktreePath, worktreeBlock, directory } = params
   const progress = getPlanProgress(planPath)
-  const newState = createBoulderState(planPath, sessionId, activeAgent, worktreePath)
+  const newState = createBoulderState(
+    planPath,
+    sessionId,
+    normalizeAgentForPromptKey(activeAgent) ?? activeAgent,
+    worktreePath,
+  )
   writeBoulderState(directory, newState)
 
   return `
@@ -146,12 +152,13 @@ Looking for new plans...`
   const updatedSessions = sessionAlreadyTracked
     ? existingState.session_ids
     : [...existingState.session_ids, sessionId]
-  const shouldRewriteState = existingState.agent !== activeAgent || worktreePath !== undefined
+  const normalizedActiveAgent = normalizeAgentForPromptKey(activeAgent) ?? activeAgent
+  const shouldRewriteState = existingState.agent !== normalizedActiveAgent || worktreePath !== undefined
 
   if (shouldRewriteState) {
     writeBoulderState(directory, {
       ...existingState,
-      agent: activeAgent,
+      agent: normalizedActiveAgent,
       ...(worktreePath !== undefined ? { worktree_path: worktreePath } : {}),
       session_ids: updatedSessions,
     })

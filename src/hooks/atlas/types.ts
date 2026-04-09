@@ -36,6 +36,7 @@ export interface SessionState {
   lastEventWasAbortError?: boolean
   lastContinuationInjectedAt?: number
   isInjectingContinuation?: boolean
+  trackedBoulderKey?: string
   promptFailureCount: number
   lastFailureAt?: number
   pendingRetryTimer?: ReturnType<typeof setTimeout>

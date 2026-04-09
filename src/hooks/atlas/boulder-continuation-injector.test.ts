@@ -14,7 +14,7 @@ describe("injectBoulderContinuation", () => {
     _resetForTesting()
   })
 
-  test("uses raw agent key for promptAsync to avoid HTTP header issues", async () => {
+  test("uses prompt-safe runtime agent name for promptAsync", async () => {
     // given
     registerAgentName("atlas")
     const promptAsyncMock = mock(async (_request: unknown) => undefined)
@@ -41,13 +41,12 @@ describe("injectBoulderContinuation", () => {
       sessionState: { promptFailureCount: 0 },
     })
 
-    // then - uses raw agent key, not display name (to avoid HTTP header validation issues)
     expect(result).toBe("injected")
     expect(promptAsyncMock).toHaveBeenCalledTimes(1)
     expect(promptAsyncMock).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
-          agent: "atlas",
+          agent: "Atlas (Plan Executor)",
         }),
       }),
     )
@@ -91,7 +90,7 @@ describe("injectBoulderContinuation", () => {
     expect(sessionState.lastContinuationInjectedAt).toBe(123)
   })
 
-  test("#given the continuation agent is unavailable #when injector runs #then it reports skipped agent unavailable without prompting", async () => {
+  test("#given no continuation agent can be resolved #when injector runs #then it reports skipped agent unavailable without prompting", async () => {
     // given
     const promptAsyncMock = mock(async (_request: unknown) => undefined)
     const messagesMock = mock(async () => ({ data: [] }))
@@ -113,7 +112,7 @@ describe("injectBoulderContinuation", () => {
       planName: "test-plan",
       remaining: 1,
       total: 2,
-      agent: "missing-agent",
+      agent: undefined,
       sessionState: { promptFailureCount: 0 },
     })
 

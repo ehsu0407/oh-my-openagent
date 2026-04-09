@@ -5,6 +5,8 @@ import {
   readBoulderState,
   readCurrentTopLevelTask,
 } from "../../features/boulder-state"
+import { setContinuationMarkerSource } from "../../features/run-continuation-state"
+import { readContinuationMarker } from "../../features/run-continuation-state/storage"
 import { getSessionAgent } from "../../features/claude-code-session-state"
 import { getLastAgentFromSession } from "./session-last-agent"
 import { isSessionInBoulderLineage } from "./boulder-session-lineage"
@@ -18,7 +20,97 @@ import type { AtlasHookOptions, SessionState } from "./types"
 const CONTINUATION_COOLDOWN_MS = 5000
 const FAILURE_BACKOFF_MS = 5 * 60 * 1000
 const MAX_CONSECUTIVE_PROMPT_FAILURES = 10
+const MAX_CONSECUTIVE_BOULDER_CONTINUATIONS = 3
 const RETRY_DELAY_MS = CONTINUATION_COOLDOWN_MS + 1000
+const boulderContinuationCounts = new Map<string, number>()
+
+function getPersistedBoulderAttemptCount(directory: string, sessionID: string): number {
+  return readContinuationMarker(directory, sessionID)?.sources.boulder?.attemptCount ?? 0
+}
+
+function setPersistedBoulderAttemptCount(directory: string, sessionID: string, attemptCount: number): void {
+  setContinuationMarkerSource(directory, sessionID, "boulder", "idle", undefined, attemptCount)
+}
+
+function createTrackedBoulderKey(input: {
+  directory: string
+  activePlan: string
+  startedAt?: string
+}): string {
+  return `${input.directory}:${input.activePlan}:${input.startedAt ?? "unknown"}`
+}
+
+function getTrackedBoulderContinuationCount(sessionState: SessionState): number {
+  if (!sessionState.trackedBoulderKey) {
+    return 0
+  }
+
+  return boulderContinuationCounts.get(sessionState.trackedBoulderKey) ?? 0
+}
+
+export function clearTrackedBoulderContinuationCap(sessionState: SessionState): void {
+  if (sessionState.trackedBoulderKey) {
+    boulderContinuationCounts.delete(sessionState.trackedBoulderKey)
+  }
+  sessionState.trackedBoulderKey = undefined
+}
+
+export function detachTrackedBoulderContinuationKey(sessionState: SessionState): void {
+  sessionState.trackedBoulderKey = undefined
+}
+
+function clearBoulderContinuationCap(input: {
+  ctx: PluginInput
+  sessionID: string
+  sessionState: SessionState
+  clearTrackedPlan?: boolean
+}): void {
+  setPersistedBoulderAttemptCount(input.ctx.directory, input.sessionID, 0)
+  if (input.clearTrackedPlan) {
+    clearTrackedBoulderContinuationCap(input.sessionState)
+  }
+  setContinuationMarkerSource(input.ctx.directory, input.sessionID, "boulder", "idle")
+}
+
+function markBoulderContinuationCapReached(input: {
+  ctx: PluginInput
+  sessionID: string
+  sessionState: SessionState
+  planName: string
+}): void {
+  setContinuationMarkerSource(
+    input.ctx.directory,
+    input.sessionID,
+    "boulder",
+    "stopped",
+    `boulder continuation paused after ${MAX_CONSECUTIVE_BOULDER_CONTINUATIONS} consecutive attempts; waiting for user input or boulder state change`,
+    getPersistedBoulderAttemptCount(input.ctx.directory, input.sessionID),
+  )
+  log(`[${HOOK_NAME}] Skipped: boulder continuation cap reached`, {
+    sessionID: input.sessionID,
+    plan: input.planName,
+    consecutiveBoulderContinuations: getTrackedBoulderContinuationCount(input.sessionState),
+    maxConsecutiveBoulderContinuations: MAX_CONSECUTIVE_BOULDER_CONTINUATIONS,
+  })
+}
+
+function shouldPauseForBoulderContinuationCap(input: {
+  ctx: PluginInput
+  sessionID: string
+  sessionState: SessionState
+  planName: string
+}): boolean {
+  const trackedCount = Math.max(
+    getTrackedBoulderContinuationCount(input.sessionState),
+    getPersistedBoulderAttemptCount(input.ctx.directory, input.sessionID),
+  )
+  if (trackedCount < MAX_CONSECUTIVE_BOULDER_CONTINUATIONS) {
+    return false
+  }
+
+  markBoulderContinuationCapReached(input)
+  return true
+}
 
 function hasRunningBackgroundTasks(sessionID: string, options?: AtlasHookOptions): boolean {
   const backgroundManager = options?.backgroundManager
@@ -60,6 +152,12 @@ async function injectContinuation(input: {
       : null
 
     if (!currentBoulder) {
+      clearBoulderContinuationCap({
+        ctx: input.ctx,
+        sessionID: input.sessionID,
+        sessionState: input.sessionState,
+        clearTrackedPlan: true,
+      })
       return
     }
 
@@ -96,6 +194,12 @@ async function injectContinuation(input: {
       if (input.sessionState.pendingRetryTimer) {
         clearTimeout(input.sessionState.pendingRetryTimer)
         input.sessionState.pendingRetryTimer = undefined
+      }
+      if (input.sessionState.trackedBoulderKey) {
+        const currentCount = boulderContinuationCounts.get(input.sessionState.trackedBoulderKey) ?? 0
+        const nextCount = currentCount + 1
+        boulderContinuationCounts.set(input.sessionState.trackedBoulderKey, nextCount)
+        setPersistedBoulderAttemptCount(input.ctx.directory, input.sessionID, nextCount)
       }
       input.sessionState.lastContinuationInjectedAt = Date.now()
       return
@@ -160,11 +264,25 @@ function scheduleRetry(input: {
     }
 
     const currentBoulder = readBoulderState(ctx.directory)
-    if (!currentBoulder) return
+    if (!currentBoulder) {
+      clearBoulderContinuationCap({ ctx, sessionID, sessionState, clearTrackedPlan: true })
+      return
+    }
     if (!currentBoulder.session_ids?.includes(sessionID)) return
 
     const currentProgress = getPlanProgress(currentBoulder.active_plan)
-    if (currentProgress.isComplete) return
+    if (currentProgress.isComplete) {
+      clearBoulderContinuationCap({ ctx, sessionID, sessionState, clearTrackedPlan: true })
+      return
+    }
+    if (shouldPauseForBoulderContinuationCap({
+      ctx,
+      sessionID,
+      sessionState,
+      planName: currentBoulder.plan_name,
+    })) {
+      return
+    }
     if (options?.isContinuationStopped?.(sessionID)) return
     const canContinueSession = await canContinueTrackedBoulderSession({
       client: ctx.client,
@@ -207,13 +325,25 @@ export async function handleAtlasSessionIdle(input: {
     directory: ctx.directory,
     sessionID,
   })
+  const sessionState = getState(sessionID)
   if (!activeBoulderSession) {
+    clearBoulderContinuationCap({ ctx, sessionID, sessionState, clearTrackedPlan: true })
     log(`[${HOOK_NAME}] Skipped: session not registered in active boulder`, { sessionID })
     return
   }
 
   const { boulderState, progress, appendedSession } = activeBoulderSession
+  const trackedBoulderKey = createTrackedBoulderKey({
+    directory: ctx.directory,
+    activePlan: boulderState.active_plan,
+    startedAt: boulderState.started_at,
+  })
+  if (sessionState.trackedBoulderKey !== trackedBoulderKey) {
+    clearBoulderContinuationCap({ ctx, sessionID, sessionState, clearTrackedPlan: true })
+    sessionState.trackedBoulderKey = trackedBoulderKey
+  }
   if (progress.isComplete) {
+    clearBoulderContinuationCap({ ctx, sessionID, sessionState, clearTrackedPlan: true })
     log(`[${HOOK_NAME}] Boulder complete`, { sessionID, plan: boulderState.plan_name })
     return
   }
@@ -240,7 +370,6 @@ export async function handleAtlasSessionIdle(input: {
     return
   }
 
-  const sessionState = getState(sessionID)
   const now = Date.now()
 
   if (sessionState.waitingForFinalWaveApproval) {
@@ -277,7 +406,17 @@ export async function handleAtlasSessionIdle(input: {
   }
 
   if (options?.isContinuationStopped?.(sessionID)) {
+    clearBoulderContinuationCap({ ctx, sessionID, sessionState })
     log(`[${HOOK_NAME}] Skipped: continuation stopped for session`, { sessionID })
+    return
+  }
+
+  if (shouldPauseForBoulderContinuationCap({
+    ctx,
+    sessionID,
+    sessionState,
+    planName: boulderState.plan_name,
+  })) {
     return
   }
 

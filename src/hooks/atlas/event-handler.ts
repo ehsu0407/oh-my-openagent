@@ -1,8 +1,13 @@
 import type { PluginInput } from "@opencode-ai/plugin"
+import { setContinuationMarkerSource } from "../../features/run-continuation-state"
 import { log } from "../../shared/logger"
 import { HOOK_NAME } from "./hook-name"
 import { isAbortError } from "./is-abort-error"
-import { handleAtlasSessionIdle } from "./idle-event"
+import {
+  clearTrackedBoulderContinuationCap,
+  detachTrackedBoulderContinuationKey,
+  handleAtlasSessionIdle,
+} from "./idle-event"
 import type { AtlasHookOptions, SessionState } from "./types"
 
 export function createAtlasEventHandler(input: {
@@ -39,13 +44,16 @@ export function createAtlasEventHandler(input: {
       const info = props?.info as Record<string, unknown> | undefined
       const sessionID = info?.sessionID as string | undefined
       const role = info?.role as string | undefined
+      const agent = info?.agent as string | undefined
       if (!sessionID) return
 
       const state = sessions.get(sessionID)
       if (state) {
         state.lastEventWasAbortError = false
-        if (role === "user") {
+        if (role === "user" && !agent) {
+          clearTrackedBoulderContinuationCap(state)
           state.waitingForFinalWaveApproval = false
+          setContinuationMarkerSource(ctx.directory, sessionID, "boulder", "idle")
         }
       }
       return
@@ -80,6 +88,9 @@ export function createAtlasEventHandler(input: {
       const sessionInfo = props?.info as { id?: string } | undefined
       if (sessionInfo?.id) {
         const deletedState = sessions.get(sessionInfo.id)
+        if (deletedState) {
+          detachTrackedBoulderContinuationKey(deletedState)
+        }
         if (deletedState?.pendingRetryTimer) {
           clearTimeout(deletedState.pendingRetryTimer)
         }
@@ -93,6 +104,9 @@ export function createAtlasEventHandler(input: {
       const sessionID = (props?.sessionID ?? (props?.info as { id?: string } | undefined)?.id) as string | undefined
       if (sessionID) {
         const compactedState = sessions.get(sessionID)
+        if (compactedState) {
+          detachTrackedBoulderContinuationKey(compactedState)
+        }
         if (compactedState?.pendingRetryTimer) {
           clearTimeout(compactedState.pendingRetryTimer)
         }
