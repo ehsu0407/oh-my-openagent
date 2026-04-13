@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
   clearContinuationMarker,
+  getContinuationMarkerSourceState,
   isContinuationMarkerActive,
   readContinuationMarker,
   setContinuationMarkerSource,
@@ -73,6 +74,21 @@ describe("run-continuation-state storage", () => {
 
     // then
     expect(isActive).toBe(false)
+  })
+
+  it("reads per-source approval state", () => {
+    // given
+    const directory = createTempDir()
+    const sessionID = "ses_approval"
+    setContinuationMarkerSource(directory, sessionID, "approval", "active", "waiting for user approval")
+    const marker = readContinuationMarker(directory, sessionID)
+
+    // when
+    const approvalState = getContinuationMarkerSourceState(marker, "approval")
+
+    // then
+    expect(approvalState).toBe("active")
+    expect(marker?.sources.approval?.reason).toBe("waiting for user approval")
   })
 
   it("clears marker for a session", () => {

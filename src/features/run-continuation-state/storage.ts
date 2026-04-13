@@ -56,6 +56,13 @@ export function setContinuationMarkerSource(
   return next
 }
 
+export function getContinuationMarkerSourceState(
+  marker: ContinuationMarker | null,
+  source: ContinuationMarkerSource,
+): ContinuationMarkerState | null {
+  return marker?.sources[source]?.state ?? null
+}
+
 export function clearContinuationMarker(directory: string, sessionID: string): void {
   const markerPath = getMarkerPath(directory, sessionID)
   if (!existsSync(markerPath)) return

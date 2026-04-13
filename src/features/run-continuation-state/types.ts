@@ -1,4 +1,4 @@
-export type ContinuationMarkerSource = "todo" | "stop"
+export type ContinuationMarkerSource = "todo" | "stop" | "approval"
 
 export type ContinuationMarkerState = "idle" | "active" | "stopped"
 
