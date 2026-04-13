@@ -7,6 +7,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk"
 import type { AssistantMessage, Session } from "@opencode-ai/sdk"
 import type { BoulderState } from "../../features/boulder-state"
 import { clearBoulderState, writeBoulderState } from "../../features/boulder-state"
+import { readContinuationMarker, setContinuationMarkerSource } from "../../features/run-continuation-state"
 
 const TEST_STORAGE_ROOT = join(tmpdir(), `atlas-final-wave-storage-${randomUUID()}`)
 const TEST_MESSAGE_STORAGE = join(TEST_STORAGE_ROOT, "message")
@@ -174,7 +175,224 @@ session_id: ses_final_wave_review
     expect(toolOutput.output).toContain("FINAL WAVE APPROVAL GATE")
     expect(toolOutput.output).toContain("explicit user approval")
     expect(toolOutput.output).not.toContain("STEP 8: PROCEED TO NEXT TASK")
+    expect(toolOutput.output).toContain("## FINAL WAVE REVIEW COMPLETED")
+    expect(toolOutput.output).not.toContain("**Subagent Response:**")
     expect(mockInput._promptMock).not.toHaveBeenCalled()
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("active")
+
+    cleanupMessageStorage(sessionID)
+  })
+
+  test("clears persisted approval pause on user reply", async () => {
+    // given
+    const sessionID = "atlas-final-wave-session"
+    setupMessageStorage(sessionID)
+
+    const planPath = join(testDirectory, "final-wave-plan.md")
+    writeFileSync(
+      planPath,
+      `# Plan
+
+## TODOs
+- [x] 1. Ship the implementation
+
+## Final Verification Wave (MANDATORY - after ALL implementation tasks)
+- [x] F1. **Plan Compliance Audit** - \`oracle\`
+- [x] F2. **Code Quality Review** - \`unspecified-high\`
+- [x] F3. **Real Manual QA** - \`unspecified-high\`
+- [ ] F4. **Scope Fidelity Check** - \`deep\`
+`,
+    )
+
+    writeBoulderState(testDirectory, {
+      active_plan: planPath,
+      started_at: "2026-01-02T10:00:00Z",
+      session_ids: [sessionID],
+      plan_name: "final-wave-plan",
+      agent: "atlas",
+    })
+
+    const hook = createAtlasHook(createMockPluginInput())
+    const toolOutput = {
+      title: "Sisyphus Task",
+      output: `Tasks [4/4 compliant] | VERDICT: APPROVE
+
+<task_metadata>
+session_id: ses_final_wave_review
+</task_metadata>`,
+      metadata: {},
+    }
+
+    await hook["tool.execute.after"]({ tool: "task", sessionID }, toolOutput)
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("active")
+
+    // when
+    await hook.handler({
+      event: {
+        type: "message.updated",
+        properties: { info: { sessionID, role: "user" } },
+      },
+    })
+
+    // then
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("idle")
+
+    cleanupMessageStorage(sessionID)
+  })
+
+  test("clears persisted approval pause on real user reply even without in-memory session state", async () => {
+    // given
+    const sessionID = "atlas-final-wave-persisted-only-session"
+    const mockInput = createMockPluginInput()
+    const hook = createAtlasHook(mockInput)
+    setContinuationMarkerSource(testDirectory, sessionID, "approval", "active", "waiting for explicit final-wave approval")
+
+    // when
+    await hook.handler({
+      event: {
+        type: "message.updated",
+        properties: { info: { sessionID, role: "user" } },
+      },
+    })
+
+    // then
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("idle")
+  })
+
+  test("does not clear approval pause on internal continuation message", async () => {
+    // given
+    const sessionID = "atlas-final-wave-internal-session"
+    const internalMessageID = "msg_internal_continuation"
+    setupMessageStorage(sessionID)
+
+    const planPath = join(testDirectory, "final-wave-plan.md")
+    writeFileSync(
+      planPath,
+      `# Plan
+
+## TODOs
+- [x] 1. Ship the implementation
+
+## Final Verification Wave (MANDATORY - after ALL implementation tasks)
+- [x] F1. **Plan Compliance Audit** - \`oracle\`
+- [x] F2. **Code Quality Review** - \`unspecified-high\`
+- [x] F3. **Real Manual QA** - \`unspecified-high\`
+- [ ] F4. **Scope Fidelity Check** - \`deep\`
+`,
+    )
+
+    writeBoulderState(testDirectory, {
+      active_plan: planPath,
+      started_at: "2026-01-02T10:00:00Z",
+      session_ids: [sessionID],
+      plan_name: "final-wave-plan",
+      agent: "atlas",
+    })
+
+    const mockInput = createMockPluginInput()
+    mockInput.client = {
+      ...mockInput.client,
+      session: {
+        ...mockInput.client.session,
+        message: async () => ({
+          data: {
+            parts: [{ type: "text", text: `continue\n<!-- OMO_INTERNAL_INITIATOR -->` }],
+          },
+        }),
+      },
+    } as any
+    const hook = createAtlasHook(mockInput)
+    const toolOutput = {
+      title: "Sisyphus Task",
+      output: `Tasks [4/4 compliant] | VERDICT: APPROVE
+
+<task_metadata>
+session_id: ses_final_wave_review
+</task_metadata>`,
+      metadata: {},
+    }
+
+    await hook["tool.execute.after"]({ tool: "task", sessionID }, toolOutput)
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("active")
+
+    // when
+    await hook.handler({
+      event: {
+        type: "message.updated",
+        properties: { info: { sessionID, role: "user", id: internalMessageID } },
+      },
+    })
+
+    // then
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("active")
+
+    cleanupMessageStorage(sessionID)
+  })
+
+  test("does not clear approval pause when internal continuation message must be detected from recent messages", async () => {
+    // given
+    const sessionID = "atlas-final-wave-recent-message-session"
+    setupMessageStorage(sessionID)
+
+    const planPath = join(testDirectory, "final-wave-plan.md")
+    writeFileSync(
+      planPath,
+      `# Plan
+
+## TODOs
+- [x] 1. Ship the implementation
+
+## Final Verification Wave (MANDATORY - after ALL implementation tasks)
+- [x] F1. **Plan Compliance Audit** - \`oracle\`
+- [x] F2. **Code Quality Review** - \`unspecified-high\`
+- [x] F3. **Real Manual QA** - \`unspecified-high\`
+- [ ] F4. **Scope Fidelity Check** - \`deep\`
+`,
+    )
+
+    writeBoulderState(testDirectory, {
+      active_plan: planPath,
+      started_at: "2026-01-02T10:00:00Z",
+      session_ids: [sessionID],
+      plan_name: "final-wave-plan",
+      agent: "atlas",
+    })
+
+    const mockInput = createMockPluginInput()
+    Reflect.set(mockInput.client.session, "messages", async () => ({
+      data: [
+        {
+          info: { role: "user" },
+          parts: [{ type: "text", text: `continue\n<!-- OMO_INTERNAL_INITIATOR -->` }],
+        },
+      ],
+      request: new Request("http://localhost/session/messages"),
+      response: new Response(),
+    }))
+    const hook = createAtlasHook(mockInput)
+    const toolOutput = {
+      title: "Sisyphus Task",
+      output: `Tasks [4/4 compliant] | VERDICT: APPROVE
+
+<task_metadata>
+session_id: ses_final_wave_review
+</task_metadata>`,
+      metadata: {},
+    }
+
+    await hook["tool.execute.after"]({ tool: "task", sessionID }, toolOutput)
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("active")
+
+    // when
+    await hook.handler({
+      event: {
+        type: "message.updated",
+        properties: { info: { sessionID, role: "user" } },
+      },
+    })
+
+    // then
+    expect(readContinuationMarker(testDirectory, sessionID)?.sources.approval?.state).toBe("active")
 
     cleanupMessageStorage(sessionID)
   })

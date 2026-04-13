@@ -6,6 +6,7 @@ import {
   readBoulderState,
   upsertTaskSessionState,
 } from "../../features/boulder-state"
+import { setContinuationMarkerSource } from "../../features/run-continuation-state"
 import { log } from "../../shared/logger"
 import { isCallerOrchestrator } from "../../shared/session-utils"
 import { syncBackgroundLaunchSessionTracking } from "./background-launch-session-tracking"
@@ -151,6 +152,16 @@ export function createToolExecuteAfterHandler(input: {
           }
         }
 
+        if (toolInput.sessionID) {
+          setContinuationMarkerSource(
+            ctx.directory,
+            toolInput.sessionID,
+            "approval",
+            shouldPauseForApproval ? "active" : "idle",
+            shouldPauseForApproval ? "waiting for explicit final-wave approval" : undefined,
+          )
+        }
+
         const leadReminder = shouldPauseForApproval
           ? buildFinalWaveApprovalReminder(boulderState.plan_name, progress, preferredSessionId)
           : buildCompletionGate(boulderState.plan_name, preferredSessionId)
@@ -158,7 +169,23 @@ export function createToolExecuteAfterHandler(input: {
           ? null
           : buildOrchestratorReminder(boulderState.plan_name, progress, preferredSessionId, autoCommit, false)
 
-        toolOutput.output = `
+        toolOutput.output = shouldPauseForApproval
+          ? `
+<system-reminder>
+${leadReminder}
+</system-reminder>
+
+## FINAL WAVE REVIEW COMPLETED
+
+${fileChanges}
+
+---
+
+**Reviewer verdict:** ${originalResponse.includes("VERDICT: APPROVE") ? "VERDICT: APPROVE" : "See reviewer output in session history."}
+
+Use the persisted plan state and the final-wave summary you present to the user. Do NOT treat any earlier generic completion language as permission to edit the remaining final-wave checkbox before explicit user approval.
+`
+          : `
 <system-reminder>
 ${leadReminder}
 </system-reminder>
