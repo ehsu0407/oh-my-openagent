@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import type { BackgroundManager, BackgroundTask } from "../../features/background-agent"
 import { readContinuationMarker } from "../../features/run-continuation-state"
 import { createStopContinuationGuardHook } from "./index"
+import { setContinuationMarkerSource } from "../../features/run-continuation-state"
 
 type CancelCall = {
   taskId: string
@@ -32,6 +33,7 @@ describe("stop-continuation-guard", () => {
   function createMockPluginInput() {
     return {
       client: {
+        session: {},
         tui: {
           showToast: async () => ({}),
         },
@@ -186,6 +188,32 @@ describe("stop-continuation-guard", () => {
 
     // then - should not throw and session remains not stopped
     expect(guard.isStopped(sessionID)).toBe(false)
+  })
+
+  test("should treat persisted approval pause as stopped", () => {
+    // given
+    const input = createMockPluginInput()
+    setContinuationMarkerSource(input.directory, "approval-session", "approval", "active", "waiting for user approval")
+    const guard = createStopContinuationGuardHook(input)
+
+    // when / then
+    expect(guard.isStopped("approval-session")).toBe(true)
+  })
+
+  test("should not clear persisted approval pause on chat.message", async () => {
+    // given
+    const input = createMockPluginInput()
+    const sessionID = "approval-chat-session"
+    setContinuationMarkerSource(input.directory, sessionID, "approval", "active", "waiting for user approval")
+    const guard = createStopContinuationGuardHook(input)
+
+    // when
+    await guard["chat.message"]({ sessionID })
+
+    // then
+    const marker = readContinuationMarker(input.directory, sessionID)
+    expect(marker?.sources.approval?.state).toBe("active")
+    expect(guard.isStopped(sessionID)).toBe(true)
   })
 
   test("should handle undefined sessionID in chat.message", async () => {
